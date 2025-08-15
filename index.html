@@ -3,20 +3,238 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Diagnosztikai Checklist</title>
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0078d7">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0d6efd">
+<title>Autódiagnosztikai Ellenőrzőlista</title>
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f4f4f4; }
+header { background:#007bff; color:white; text-align:center; padding:1rem; }
+.container { padding:1rem; max-width:800px; margin:auto; }
+.category, .subcategory { background:white; border-radius:8px; padding:1rem; margin:0.5rem 0; box-shadow:0 2px 5px rgba(0,0,0,0.1); display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap;}
+.category:hover, .subcategory:hover { background:#f0f8ff; }
+button { padding:5px 8px; margin-left:5px; border:none; border-radius:5px; cursor:pointer; background:#007bff; color:white; }
+button:hover { background:#0056b3; }
+input, textarea { width:100%; padding:8px; margin:5px 0; border-radius:5px; border:1px solid #ccc; }
+.back-btn { display:inline-block; margin-bottom:1rem; padding:0.5rem 1rem; background:#007bff; color:white; border-radius:5px; text-decoration:none; cursor:pointer; }
+.form-section { background:white; padding:1rem; border-radius:8px; box-shadow:0 2px 5px rgba(0,0,0,0.1); margin-top:10px; }
+.controls { display:flex; flex-wrap:wrap; gap:5px; align-items:center;}
+.stars { display:flex; gap:5px; cursor:pointer;}
+.star { font-size:1.2rem; color:#ccc;}
+.star.selected { color:#ff9800;}
+</style>
 </head>
 <body>
-<h1>Diagnosztikai Checklist PWA</h1>
-<script src="script.js"></script>
+
+<header>
+    <h1>Autódiagnosztikai Ellenőrzőlista</h1>
+</header>
+
+<div class="container" id="app"></div>
+
 <script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./service-worker.js")
-    .then(() => console.log("Service Worker regisztrálva"))
-    .catch(err => console.log("SW hiba:", err));
+const defaultData = {
+    "Motor": ["Olajszint", "Hűtőfolyadék", "Légszűrő", "Indítási zajok"],
+    "Futómű": ["Lengéscsillapító", "Kerékcsapágy", "Kormányösszekötő", "Futómű beállítás"],
+    "Fék": ["Fékbetét vastagság", "Féktárcsa állapot", "Fékfolyadék szint", "ABS működés"],
+    "Elektromos rendszer": ["Akkumulátor feszültség", "Generátor töltés", "Világítás", "Diagnosztikai hibakódok"],
+    "Karosszéria": ["Rozsdásodás", "Festék állapot", "Szélvédő repedés", "Ajtók záródása"],
+    "Klíma és fűtés": ["Hűtés hatásfoka", "Fűtés működés", "Pollenszűrő", "Kompresszor zaj"],
+    "Launch diagnosztika": ["OBD hibakód olvasás", "Élőadat figyelés", "Alapjárat értékek", "Szenzor teszt"]
+};
+
+let cars = JSON.parse(localStorage.getItem('cars')) || {};
+let selectedCar = null;
+
+// -------------------- Belépés / Autólista --------------------
+function showCarList(){
+    const app = document.getElementById("app");
+    app.innerHTML = `<button onclick="addCar()">+ Új autó</button>`;
+    const keys = Object.keys(cars);
+    if(keys.length===0){app.innerHTML+="<p>Nincs mentett autó</p>"; return;}
+    keys.forEach(key=>{
+        const car = cars[key];
+        const div = document.createElement("div");
+        div.className="category";
+        div.innerHTML=`<span>${car.vin} - ${car.type} (${car.date})</span>
+            <div class="controls">
+                <button onclick="renameCar('${key}',event)">Átnevez</button>
+                <button onclick="deleteCar('${key}',event)">Törlés</button>
+            </div>`;
+        div.onclick = ()=>{selectedCar=key; loadCategories();};
+        app.appendChild(div);
+    });
+}
+
+function addCar(){
+    const vin = prompt("VIN:");
+    if(!vin) return;
+    const type = prompt("Autó típusa:");
+    if(!type) return;
+    const date = new Date().toLocaleDateString();
+    const id = Date.now();
+    cars[id]={vin,type,date,data:JSON.parse(JSON.stringify(defaultData)),checks:{}};
+    saveCars();
+    showCarList();
+}
+
+function renameCar(id,event){
+    event.stopPropagation();
+    const car = cars[id];
+    const vin = prompt("Új VIN:", car.vin);
+    if(!vin) return;
+    const type = prompt("Új típusa:", car.type);
+    if(!type) return;
+    car.vin=vin; car.type=type;
+    saveCars(); showCarList();
+}
+
+function deleteCar(id,event){
+    event.stopPropagation();
+    if(confirm("Biztos törlöd?")){delete cars[id]; saveCars(); showCarList();}
+}
+
+function saveCars(){localStorage.setItem('cars',JSON.stringify(cars));}
+
+// -------------------- Kategóriák --------------------
+function calculateCategoryStars(cat){
+    const car = cars[selectedCar];
+    if(!car) return 0;
+    const subs = car.data[cat];
+    if(!subs) return 0;
+    let sum=0,count=0;
+    subs.forEach(sub=>{
+        const val = car.checks.stars?.[cat]?.[sub];
+        if(val){sum+=val; count++;}
+    });
+    return count>0 ? (sum/count).toFixed(1) : 0;
+}
+
+function loadCategories(){
+    const app = document.getElementById("app");
+    if(!selectedCar){showCarList(); return;}
+    const car = cars[selectedCar];
+    app.innerHTML=`<button onclick="showCarList()">⬅ Vissza</button> <button onclick="addCategory()">+ Főkategória</button> <button onclick="downloadHTML()">Mentés HTML-be</button>`;
+    Object.keys(car.data).forEach(cat=>{
+        const total = car.data[cat].length;
+        const done = Object.keys(car.checks.stars?.[cat]||{}).length;
+        const percent = Math.round((done/total)*100);
+        const avgStars = calculateCategoryStars(cat);
+        const div = document.createElement("div");
+        div.className="category";
+        div.innerHTML=`<span>${cat} – ${percent}% kész – ⭐ ${avgStars}</span>
+            <div class="controls">
+                <button onclick="renameCategory('${cat}',event)">Átnevez</button>
+                <button onclick="deleteCategory('${cat}',event)">Törlés</button>
+                <button onclick="moveCategoryUp('${cat}',event)">⬆</button>
+                <button onclick="moveCategoryDown('${cat}',event)">⬇</button>
+                <button onclick="addSubcategory('${cat}',event)">+ Alkategória</button>
+            </div>`;
+        div.onclick = ()=>{loadSubcategories(cat);};
+        app.appendChild(div);
+    });
+}
+
+// -------------------- Főkategória CRUD --------------------
+function addCategory(){const name=prompt("Főkategória neve:");if(name){cars[selectedCar].data[name]=[]; saveCars(); loadCategories();}}
+function renameCategory(cat,event){event.stopPropagation(); const name=prompt("Új név:",cat);if(name){const car=cars[selectedCar]; car.data[name]=car.data[cat]; delete car.data[cat]; if(car.checks.stars?.[cat]){car.checks.stars[name]=car.checks.stars[cat]; delete car.checks.stars[cat];} if(car.checks.notes?.[cat]){car.checks.notes[name]=car.checks.notes[cat]; delete car.checks.notes[cat];} saveCars(); loadCategories();}}
+function deleteCategory(cat,event){event.stopPropagation(); if(confirm("Biztos törlöd?")){const car=cars[selectedCar]; delete car.data[cat]; if(car.checks.stars?.[cat]) delete car.checks.stars[cat]; if(car.checks.notes?.[cat]) delete car.checks.notes[cat]; saveCars(); loadCategories();}}
+function moveCategoryUp(cat,event){event.stopPropagation(); const car=cars[selectedCar]; const keys=Object.keys(car.data); const idx=keys.indexOf(cat); if(idx>0){const temp=keys[idx-1]; const tempVal=car.data[temp]; car.data[temp]=car.data[cat]; car.data[cat]=tempVal; const tempStars=car.checks.stars?.[temp]; if(tempStars || car.checks.stars?.[cat]){const tempS=car.checks.stars[temp]; car.checks.stars[temp]=car.checks.stars[cat]; car.checks.stars[cat]=tempS;} saveCars(); loadCategories();}}
+function moveCategoryDown(cat,event){event.stopPropagation(); const car=cars[selectedCar]; const keys=Object.keys(car.data); const idx=keys.indexOf(cat); if(idx<keys.length-1){const temp=keys[idx+1]; const tempVal=car.data[keys[idx+1]]; car.data[keys[idx+1]]=car.data[cat]; car.data[cat]=tempVal; const tempStars=car.checks.stars?.[keys[idx+1]]; if(tempStars || car.checks.stars?.[cat]){const tempS=car.checks.stars[keys[idx+1]]; car.checks.stars[keys[idx+1]]=car.checks.stars[cat]; car.checks.stars[cat]=tempS;} saveCars(); loadCategories();}}
+
+// -------------------- Alkategória CRUD --------------------
+function loadSubcategories(cat){
+    const app = document.getElementById("app");
+    const car = cars[selectedCar];
+    app.innerHTML=`<button onclick="loadCategories()">⬅ Vissza</button> <button onclick="addSubcategory('${cat}',event)">+ Alkategória</button>`;
+    car.data[cat].forEach(sub=>{
+        const starVal = car.checks.stars?.[cat]?.[sub] || 0;
+        const div = document.createElement("div");
+        div.className="subcategory";
+        div.innerHTML=`<span>${sub}</span>
+            <div class="stars" id="stars-${cat}-${sub}">${[1,2,3].map(n=>`<span class="star ${n<=starVal?'selected':''}" onclick="setStar('${cat}','${sub}',${n},event)">&#9733;</span>`).join('')}</div>
+            <div class="controls">
+                <button onclick="renameSubcategory('${cat}','${sub}',event)">Átnevez</button>
+                <button onclick="deleteSubcategory('${cat}','${sub}',event)">Törlés</button>
+                <button onclick="moveSubUp('${cat}','${sub}',event)">⬆</button>
+                <button onclick="moveSubDown('${cat}','${sub}',event)">⬇</button>
+                <button onclick="loadForm('${cat}','${sub}')">Kitöltés</button>
+            </div>`;
+        app.appendChild(div);
+    });
+}
+
+function addSubcategory(cat,event){event.stopPropagation(); const name=prompt("Alkategória neve:");if(name){cars[selectedCar].data[cat].push(name); saveCars(); loadSubcategories(cat);}}
+function renameSubcategory(cat,sub,event){event.stopPropagation(); const name=prompt("Új név:",sub);if(name){const car=cars[selectedCar]; const idx=car.data[cat].indexOf(sub); car.data[cat][idx]=name; if(car.checks.stars?.[cat]?.[sub]){car.checks.stars[cat][name]=car.checks.stars[cat][sub]; delete car.checks.stars[cat][sub];} if(car.checks.notes?.[cat]?.[sub]){car.checks.notes[cat][name]=car.checks.notes[cat][sub]; delete car.checks.notes[cat][sub];} saveCars(); loadSubcategories(cat);}}
+function deleteSubcategory(cat,sub,event){event.stopPropagation(); if(confirm("Biztos törlöd?")){const car=cars[selectedCar]; const idx=car.data[cat].indexOf(sub); if(idx>-1) car.data[cat].splice(idx,1); if(car.checks.stars?.[cat]?.[sub]) delete car.checks.stars[cat][sub]; if(car.checks.notes?.[cat]?.[sub]) delete car.checks.notes[cat][sub]; saveCars(); loadSubcategories(cat);}}
+function moveSubUp(cat,sub,event){event.stopPropagation(); const car=cars[selectedCar]; const idx=car.data[cat].indexOf(sub); if(idx>0){[car.data[cat][idx-1],car.data[cat][idx]]=[car.data[cat][idx],car.data[cat][idx-1]]; saveCars(); loadSubcategories(cat);}}
+function moveSubDown(cat,sub,event){event.stopPropagation(); const car=cars[selectedCar]; const idx=car.data[cat].indexOf(sub); if(idx<car.data[cat].length-1){[car.data[cat][idx+1],car.data[cat][idx]]=[car.data[cat][idx],car.data[cat][idx+1]]; saveCars(); loadSubcategories(cat);}}
+
+// -------------------- Csillag --------------------
+function setStar(cat,sub,val,event){
+    event.stopPropagation();
+    const car = cars[selectedCar];
+    if(!car.checks.stars) car.checks.stars={};
+    if(!car.checks.stars[cat]) car.checks.stars[cat]={};
+    car.checks.stars[cat][sub]=val;
+    saveCars();
+    loadCategories();
+    loadSubcategories(cat);
+}
+
+// -------------------- Form --------------------
+function loadForm(cat,sub){
+    const app = document.getElementById("app");
+    const car = cars[selectedCar];
+    const note = car.checks.notes?.[cat]?.[sub] || '';
+    app.innerHTML=`<button onclick="loadSubcategories('${cat}')">⬅ Vissza</button>
+        <div class="form-section">
+            <h2>${cat} - ${sub}</h2>
+            <label>Megjegyzés:</label>
+            <textarea id="note">${note}</textarea>
+            <label>Kép csatolása:</label>
+            <input type="file" id="photo" accept="image/*">
+            <button onclick="saveCheck('${cat}','${sub}')">Mentés</button>
+        </div>`;
+}
+
+function saveCheck(cat,sub){
+    const car = cars[selectedCar];
+    const note = document.getElementById('note').value;
+    if(!car.checks.notes) car.checks.notes={};
+    if(!car.checks.notes[cat]) car.checks.notes[cat]={};
+    car.checks.notes[cat][sub]=note;
+    saveCars();
+    loadSubcategories(cat);
+}
+
+// -------------------- HTML export --------------------
+function downloadHTML(){
+    const car = cars[selectedCar];
+    let content = `<h1>${car.vin} - ${car.type} (${car.date})</h1>`;
+    for(const cat in car.data){
+        content+=`<h2>${cat}</h2><ul>`;
+        car.data[cat].forEach(sub=>{
+            const star = car.checks.stars?.[cat]?.[sub] || '';
+            const note = car.checks.notes?.[cat]?.[sub] || '';
+            content+=`<li>${sub} - ⭐ ${star} - ${note}</li>`;
+        });
+        content+='</ul>';
+    }
+    const blob = new Blob([content], {type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${car.vin}_report.html`;
+    a.click();
+}
+
+// -------------------- Init --------------------
+showCarList();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/service-worker.js')
+    .then(reg => console.log('Service Worker regisztrálva:', reg))
+    .catch(err => console.error('SW hiba:', err));
 }
 </script>
 </body>
