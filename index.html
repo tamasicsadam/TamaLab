@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnosztikai Checklist</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0078d7">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Diagnosztikai Checklist PWA</h1>
+<script src="script.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./service-worker.js")
+    .then(() => console.log("Service Worker regisztrálva"))
+    .catch(err => console.log("SW hiba:", err));
+}
+</script>
+</body>
+</html>

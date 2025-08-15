@@ -1,0 +1,1 @@
+console.log('Itt lesz a teljes checklist JS kód minden funkcióval');
